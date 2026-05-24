@@ -1,0 +1,65 @@
+# =============================================================================
+#  cyberdeck-api — workspace Cargo
+# =============================================================================
+#
+#  Deux crates :
+#    * crates/core  — bibliothèque `cyberdeck-api` (transport, codec, plugins)
+#    * crates/cli   — binaire `cyberdeck-cli` (front desktop / CI)
+#
+#  Mode "edition 2024" requis (stable depuis rustc 1.85, février 2025).
+#  Cf. https://doc.rust-lang.org/edition-guide/rust-2024/
+#
+#  Resolver v3 — résout les features par crate (et non globalement) et active
+#  l'inheritance des features depuis le workspace.  Doc :
+#  https://doc.rust-lang.org/cargo/reference/resolver.html#resolver-versions
+# =============================================================================
+
+[workspace]
+resolver = "3"
+members  = ["crates/core", "crates/cli", "crates/emu"]
+
+[workspace.package]
+version      = "0.1.0"
+edition      = "2024"
+rust-version = "1.85"
+license      = "MIT OR Apache-2.0"
+authors      = ["Anthony Bondu"]
+repository   = "https://github.com/anthony/cyberdeck-api"
+publish      = false
+
+[workspace.dependencies]
+# Runtime async — tokio est l'écosystème standard pour Rust async I/O,
+# notamment pour le port série (tokio-serial) et le codec (tokio_util).
+tokio        = { version = "1.40", features = ["rt-multi-thread", "macros", "io-util", "sync", "time"] }
+tokio-serial = "5.4"
+tokio-util   = { version = "0.7", features = ["codec"] }
+futures      = "0.3"
+
+# Sérialisation
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Erreurs et traçabilité
+thiserror = "1.0"
+anyhow    = "1"
+tracing             = "0.1"
+tracing-subscriber  = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Trait async — encore requis pour exposer `async fn` dans un trait public
+# avec dyn-dispatch (le natif `async fn in trait` ne supporte pas dyn).
+async-trait = "0.1"
+
+# CLI
+clap        = { version = "4", features = ["derive"] }
+comfy-table = "7"
+indicatif   = "0.17"
+
+# Détection des ports série (énumère les TTY USB sur tous les OS).
+serialport  = "4.5"
+
+[profile.release]
+opt-level     = 3
+lto           = "fat"
+codegen-units = 1
+strip         = "symbols"
+panic         = "abort"

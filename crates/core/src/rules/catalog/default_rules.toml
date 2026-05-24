@@ -1,0 +1,370 @@
+# =============================================================================
+#  default_rules.toml — catalogue de règles pentest embarqué
+#
+#  Ce fichier est intégré au binaire via `include_str!` (cf. rules/mod.rs).
+#  Il sert de FALLBACK quand la pack distante (`rules_remote_update`) n'est
+#  pas joignable ou pas configurée.  L'API distante peut le remplacer à chaud
+#  pour ajouter / mettre à jour des règles sans recompiler l'app.
+#
+#  Schéma documenté dans cyberdeck-api/docs/rules-schema.md.
+#  Format compatible serde — parsé par `rules::schema::RulePack`.
+#
+#  Conventions :
+#    * IDs au format `<BAND>-<NNN>` (BAND ∈ SUBGHZ NFC RFID-LF WIFI BLE LORA).
+#    * `severity` ∈ info | low | medium | high | critical.
+#    * `references` cite CVE, paper academic, ou cheatsheet projet (cf.
+#      slide_cheatsheet.typ).
+#    * `recommendation` est en français — c'est ce que l'utilisateur final lit.
+# =============================================================================
+
+schema_version = 1
+pack_version   = "2026.05.21"
+source         = "default"
+
+# =============================================================================
+# SUB-GHZ — Semtech SX1262 (433 / 868 MHz)
+# =============================================================================
+
+[[rule]]
+id             = "SUBGHZ-001"
+title          = "Rolling code non-changeant — replay possible"
+severity       = "critical"
+modules        = ["sx1262"]
+window_frames  = 3
+description    = """
+Trois trames consécutives identiques observées sur le même module sub-GHz. \
+Un rolling code (KeeLoq, Hi-Tag2, etc.) DOIT changer à chaque appui — un \
+payload constant indique soit un fixed-code (vulnérable au replay immédiat) \
+soit un dysfonctionnement crypto exploitable.
+"""
+recommendation = "Auditer l'algorithme de rolling code du transmetteur. Remplacer par AES-CCM (e.g. Microchip XCS3 ou ATtiny-AES) avec compteur monotone."
+references     = [
+  "Kamkar — RollJam, DEF CON 23 (2015)",
+  "Ibrahim et al. — Jam-Listen-Replay on RKE, 2019",
+  "Gesteira et al. — RKE protocol audit, 2025",
+]
+[rule.match]
+stateful = "payload_identical_in_window"
+
+
+[[rule]]
+id             = "SUBGHZ-002"
+title          = "Émission OOK fixe (RKE sans rolling)"
+severity       = "high"
+modules        = ["sx1262"]
+description    = """
+Transmission OOK courte (≤ 16 octets) sans variation de payload, typique des \
+télécommandes de portail / volets bas-de-gamme. Replay trivial avec un Flipper.
+"""
+recommendation = "Migrer vers une télécommande HCS301 / KeeLoq avec rolling code OU upgrade vers SX1262 LoRa P2P + AES."
+references     = [
+  "OWASP IoT — Insufficient Authentication of Critical Functions",
+]
+[rule.match]
+all = [
+  { freq_range = [430_000_000, 435_000_000] },
+  { payload_length_between = [4, 16] },
+  { payload_hex_matches = "^[A-F0-9]+$" },
+]
+
+
+[[rule]]
+id             = "SUBGHZ-003"
+title          = "Paging POCSAG en clair détecté"
+severity       = "medium"
+modules        = ["sx1262"]
+description    = """
+Une trame POCSAG (Post Office Code Standardisation Advisory Group) non chiffrée \
+contient typiquement un identifiant 7 chiffres + un message ASCII. Toute info \
+sensible (pageurs médicaux, urgences) y voyage en clair.
+"""
+recommendation = "Évaluer le passage à un système de paging IP-based (TETRA chiffré) ou un SMS encrypted (Signal-based)."
+references     = [
+  "Hörmann — POCSAG message replay 2019",
+]
+[rule.match]
+all = [
+  { freq_range = [148_500_000, 149_500_000] },
+  { payload_hex_starts_with = "7CD215D8" },     # POCSAG sync codeword
+]
+
+
+# =============================================================================
+# NFC 13.56 MHz — ST ST25R3916 (ISO 14443 A/B + 15693)
+# =============================================================================
+
+[[rule]]
+id             = "NFC-001"
+title          = "UID Mifare Classic exposé sans authentification"
+severity       = "high"
+modules        = ["st25r3916"]
+description    = """
+Un UID Mifare Classic 4 octets (`04…`) lu sans phase d'authentification \
+ultérieure indique soit une carte non utilisée pour la sécurité (badge simple \
+de présence) soit un système qui s'appuie UNIQUEMENT sur l'UID — ce qui est \
+clonable trivialement avec une magic card.
+"""
+recommendation = "Si le système est sensible (contrôle d'accès), migrer vers Mifare DESFire EV3 avec AES-128 mutual auth. Si l'UID seul est délibéré (anti-relog), ajouter un OTP côté serveur."
+references     = [
+  "Nohl & Plötz — Crypto1 break, 24C3 (2007)",
+  "Meijer & Verdult — Hardnested, ACM CCS (2015)",
+  "Wouters et al. — Unsaflok (2024)",
+]
+[rule.match]
+all = [
+  { freq_range = [13_500_000, 13_600_000] },
+  { payload_hex_starts_with = "04" },
+  { payload_length_between = [4, 7] },
+]
+
+
+[[rule]]
+id             = "NFC-002"
+title          = "Clé par défaut Mifare `FFFFFFFFFFFF` utilisée"
+severity       = "critical"
+modules        = ["st25r3916"]
+description    = """
+La séquence d'authentification Mifare Classic présente la clé A ou B \
+factory-default `FF FF FF FF FF FF`. La carte est lisible et clonable par \
+n'importe quel attaquant en < 1 seconde.
+"""
+recommendation = "Re-keying obligatoire immédiat avec des clés aléatoires 6 octets. Audit complet de la flotte de badges."
+references     = [
+  "NXP MF1ICS50 Datasheet — default keys (2003)",
+]
+[rule.match]
+all = [
+  { freq_range = [13_500_000, 13_600_000] },
+  { payload_hex_matches = ".*FFFFFFFFFFFF.*" },
+]
+
+
+[[rule]]
+id             = "NFC-003"
+title          = "Handshake ISO 14443A en clair (REQA / ATQA)"
+severity       = "medium"
+modules        = ["st25r3916"]
+description    = """
+Une séquence REQA (`26`) + ATQA détectée. Phase normale du protocole, \
+mais utile pour fingerprinter la carte (vendor, anticol level).  En soi pas \
+exploitable, mais signale qu'un attaquant en proximité peut énumérer toutes \
+les cartes présentes.
+"""
+recommendation = "Limiter la phase de polling côté lecteur (anti-collision rapide + sleep)."
+references     = [
+  "ISO/IEC 14443-3 standard",
+]
+[rule.match]
+all = [
+  { freq_range = [13_500_000, 13_600_000] },
+  { payload_hex_starts_with = "26" },
+]
+
+
+# =============================================================================
+# RFID LF 125 kHz — frontend discret (EM4102, HID Prox, etc.)
+# =============================================================================
+
+[[rule]]
+id             = "RFID-LF-001"
+title          = "Badge EM4102 lisible en clair (ASK sans crypto)"
+severity       = "high"
+modules        = ["rfid_lf"]
+description    = """
+Le tag EM4102 (et clones T5577 / HID ProxCard II) expose son identifiant 40 \
+bits en modulation ASK sans aucune authentification. Clonable sur un Flipper \
+en 2 secondes à 10 cm de distance.
+"""
+recommendation = "Migrer vers HID iCLASS Seos ou Mifare DESFire EV3 13.56 MHz avec auth mutuelle AES-128."
+references     = [
+  "Westhues — RFID Spoofing (2006)",
+  "https://en.wikipedia.org/wiki/EM4100",
+]
+[rule.match]
+all = [
+  { freq_range = [120_000, 135_000] },
+  { payload_length_between = [5, 8] },
+]
+
+
+[[rule]]
+id             = "RFID-LF-002"
+title          = "HID ProxCard II détecté (26-bit Wiegand)"
+severity       = "high"
+modules        = ["rfid_lf"]
+description    = """
+Badge HID 125 kHz au format Wiegand 26 bits (8 bits site code + 16 bits ID). \
+Aucune authentification, clonable trivialement.  Très répandu dans les bureaux \
+américains et certains contrôles d'accès français legacy.
+"""
+recommendation = "Audit du parc HID Prox et migration progressive vers iCLASS SE ou Seos."
+references     = [
+  "Wiegand-26 format, Cardax/HID 1996",
+  "DefCon 23 — Westhues talks on HID spoofing",
+]
+[rule.match]
+all = [
+  { freq_range = [120_000, 135_000] },
+  { payload_length_between = [4, 4] },           # 26 bits ≈ 4 octets quand packé
+]
+
+
+[[rule]]
+id             = "RFID-LF-003"
+title          = "Tag Indala 26-bit / 27-bit"
+severity       = "medium"
+modules        = ["rfid_lf"]
+description    = """
+Format Indala (Motorola) — 26-27 bits FSK 125 kHz, format propriétaire mais \
+décodé publiquement depuis 2008. Lisible par RFIDler / Proxmark.
+"""
+recommendation = "Considérer le coût vs bénéfice d'une migration. Système legacy mais largement déployé."
+references     = [
+  "Proxmark3 wiki — Indala formats",
+]
+[rule.match]
+all = [
+  { freq_range = [120_000, 135_000] },
+  { payload_hex_starts_with = "A0" },
+]
+
+
+# =============================================================================
+# WiFi / BLE / Zigbee — Espressif ESP32-C6
+# =============================================================================
+
+[[rule]]
+id             = "WIFI-001"
+title          = "Point d'accès WiFi ouvert détecté (sans chiffrement)"
+severity       = "critical"
+modules        = ["esp32c6"]
+description    = """
+Beacon 802.11 avec capability bits indiquant "Open" (aucun chiffrement WEP / \
+WPA / WPA2 / WPA3).  Tout traffic est en clair, MitM trivial pour un \
+attaquant en portée RF.
+"""
+recommendation = "Activer WPA3-Personal ou WPA2-Enterprise (RADIUS). Désactiver WPS. Ne JAMAIS opérer un AP open en production."
+references     = [
+  "IEEE 802.11-2020 §12 Security",
+  "OWASP IoT Top 10 — Insecure Network Services",
+]
+[rule.match]
+all = [
+  { freq_range = [2_400_000_000, 2_500_000_000] },
+  { payload_hex_starts_with = "8000" },     # beacon frame control + open capa marker
+]
+
+
+[[rule]]
+id             = "WIFI-002"
+title          = "Handshake WPA2 4-way capturé (KRACK candidate)"
+severity       = "high"
+modules        = ["esp32c6"]
+description    = """
+Séquence EAPoL 4-way handshake détectée. Si le client est non-patché \
+(CVE-2017-13077), un attaquant peut forcer la réutilisation du nonce et \
+casser la session (KRACK).  Le handshake capturé permet aussi un brute-force \
+hors-ligne du passphrase.
+"""
+recommendation = "Patcher tous les clients (CVE-2017-13077 à 13086). Forcer WPA3-SAE sur le SSID. Passphrase ≥ 20 chars random."
+references     = [
+  "Vanhoef & Piessens — KRACK, ACM CCS (2017)",
+  "CVE-2017-13077",
+]
+[rule.match]
+all = [
+  { freq_range = [2_400_000_000, 2_500_000_000] },
+  { payload_hex_starts_with = "888E" },       # EAPoL ethertype
+]
+
+
+[[rule]]
+id             = "BLE-001"
+title          = "Pairing BLE Just Works (sans protection MITM)"
+severity       = "high"
+modules        = ["esp32c6"]
+description    = """
+Procédure de pairing BLE Legacy "Just Works" (Out-of-Band, Passkey ou \
+Numeric Comparison NON utilisée). Un attaquant en proximité peut se substituer \
+en MitM pendant le pairing.  Combiné avec KNOB (CVE-2019-9506), permet de \
+forcer 1 octet d'entropie sur la clé négociée.
+"""
+recommendation = "Utiliser BLE Secure Connections (LE Pairing 4.2+) avec Numeric Comparison ou Passkey. Refuser Just Works côté firmware."
+references     = [
+  "Antonioli et al. — KNOB, USENIX (2019), CVE-2019-9506",
+  "Bluetooth Core Spec v5.4 §5.2.2 Pairing",
+]
+[rule.match]
+all = [
+  { freq_range = [2_400_000_000, 2_500_000_000] },
+  { payload_hex_starts_with = "1B" },         # SMP pairing request marker
+]
+
+
+# =============================================================================
+# LoRa 2.4 GHz — Semtech SX1280 (ELRS, LoRaWAN 2.4)
+# =============================================================================
+
+[[rule]]
+id             = "LORA-001"
+title          = "ELRS — control frame sans binding-phrase auth"
+severity       = "high"
+modules        = ["sx1280"]
+description    = """
+Trame ExpressLRS détectée sans phase d'auth binding-phrase (le firmware \
+ELRS < 3.0 acceptait des trames non authentifiées sur le binding par défaut). \
+Un attaquant peut hijacker le contrôle d'un drone FPV en portée RF.
+"""
+recommendation = "Mettre à jour ELRS firmware ≥ 3.5. Configurer une binding-phrase non-triviale (≥ 12 chars random)."
+references     = [
+  "ExpressLRS — Security advisory binding-phrase (2023)",
+]
+[rule.match]
+all = [
+  { freq_range = [2_400_000_000, 2_500_000_000] },
+  { payload_hex_starts_with = "CC" },
+]
+
+
+[[rule]]
+id             = "LORA-002"
+title          = "LoRaWAN ADR manipulation pattern (ChirpOTLE-like)"
+severity       = "medium"
+modules        = ["sx1280"]
+description    = """
+Trafic LoRaWAN avec champ ADR (Adaptive Data Rate) modifié de façon \
+incohérente — pattern caractéristique de ChirpOTLE ou BlackoutADR qui \
+poussent le nœud à TX max power + min data rate, drainant la batterie \
+en quelques heures.
+"""
+recommendation = "Activer la détection ADR-Spoof côté Network Server. Patcher firmware LoRaWAN ≥ 1.0.4 + LoRaMAC v4.7.0."
+references     = [
+  "ChirpOTLE — ACM WiSec (2020)",
+  "Hidawi et al. — BlackoutADR (2025)",
+]
+[rule.match]
+all = [
+  { freq_range = [2_400_000_000, 2_500_000_000] },
+  { payload_hex_starts_with = "03" },          # MAC command ADR
+]
+
+
+[[rule]]
+id             = "LORA-003"
+title          = "Beacon LoRa 2.4 GHz en clair"
+severity       = "low"
+modules        = ["sx1280"]
+description    = """
+Beacon LoRa 2.4 GHz visible (pas de chiffrement applicatif détecté).  En soi \
+non critique — LoRa offre un AES-128 NwkSKey + AppSKey en LoRaWAN — mais \
+indique un déploiement potentiellement P2P sans crypto applicative.
+"""
+recommendation = "Vérifier que la couche applicative chiffre le payload (AES-CCM)."
+references     = [
+  "LoRaWAN spec v1.0.4 §4.3",
+]
+[rule.match]
+all = [
+  { freq_range = [2_400_000_000, 2_500_000_000] },
+  { payload_length_between = [8, 64] },
+]

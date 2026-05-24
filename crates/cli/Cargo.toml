@@ -1,0 +1,25 @@
+[package]
+name         = "cyberdeck-cli"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+description  = "Command-line front for the RF Cyberdeck firmware."
+
+[[bin]]
+name = "cyberdeck-cli"
+path = "src/main.rs"
+
+[dependencies]
+cyberdeck-api      = { path = "../core" }
+tokio              = { workspace = true }
+tokio-util         = { workspace = true }
+futures            = { workspace = true }
+clap               = { workspace = true }
+comfy-table        = { workspace = true }
+indicatif          = { workspace = true }
+serde_json         = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow             = { workspace = true }

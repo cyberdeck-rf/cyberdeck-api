@@ -1,0 +1,23 @@
+[package]
+name         = "cyberdeck-emu"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+description  = "Firmware emulator for the RF Cyberdeck — speaks the NDJSON v1 protocol over TCP. Dockerized."
+
+[[bin]]
+name = "cyberdeck-emu"
+path = "src/main.rs"
+
+# On désactive la feature `serial` du core : pas besoin de libudev dans
+# l'image Docker, l'émulateur ne touche jamais au matériel.
+[dependencies]
+cyberdeck-api      = { path = "../core", default-features = false }
+tokio              = { workspace = true, features = ["net", "io-util", "rt-multi-thread", "macros", "sync", "time"] }
+clap               = { workspace = true }
+serde_json         = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow             = { workspace = true }

@@ -1,0 +1,29 @@
+# =============================================================================
+#  docker-compose.yml — orchestration de l'émulateur cyberdeck-emu
+# =============================================================================
+#
+#  Lancer :
+#    cd ~/Downloads/mission/cyberdeck-api
+#    docker compose up -d         # build + run en arrière-plan
+#    docker compose logs -f       # suivre les logs
+#    docker compose down          # stop + cleanup
+#
+#  Une fois up, la mobile-app et la CLI peuvent s'y connecter via TCP :
+#    cyberdeck-cli --tcp 127.0.0.1:17017 status
+#  ou côté UI : Connect page → Transport "TCP" → host:port = localhost:17017
+# =============================================================================
+
+services:
+  emu:
+    build: .
+    container_name: cyberdeck-emu
+    image: cyberdeck-emu:latest
+    ports:
+      - "17017:17017"
+    restart: unless-stopped
+    environment:
+      # Verbosité du tracing Rust (info | debug | trace).
+      RUST_LOG: info
+    # On limite la conso mémoire — l'émulateur n'a aucune raison de monter,
+    # ça permet de détecter un memleak éventuel pendant la démo.
+    mem_limit: 64m
