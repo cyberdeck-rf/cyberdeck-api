@@ -20,6 +20,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install libudev (requis par serialport-rs)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libudev-dev pkg-config
+
       - name: Format (informational — not blocking)
         # Le repo a 136 violations de fmt pré-existantes (auto-discovered).
         # On exécute le check pour visibilité mais on n'en fait pas un gate
