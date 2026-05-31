@@ -190,6 +190,27 @@ pub struct Rule {
     /// Spec de match (cf. [`MatchSpec`]).
     #[serde(rename = "match")]
     pub r#match: MatchSpec,
+
+    // -------------------------------------------------------------------------
+    //  M110 — Champs pédagogiques optionnels exposés au frontend pour expliquer
+    //  un finding (rule_definition) sans recompiler le firmware.  Tous les
+    //  champs sont `Option`/`Vec` avec `serde(default)` pour ne pas casser les
+    //  packs existants qui ne les définissent pas encore (backwards compat).
+    // -------------------------------------------------------------------------
+    /// Pourquoi cette détection est dangereuse pour l'utilisateur — explication
+    /// concrète de l'impact côté défensif (français).
+    #[serde(default)]
+    pub why_dangerous: Option<String>,
+    /// Étapes concrètes de mitigation à long terme (durcissement, rotation de
+    /// clés, configuration…).  Alias optionnel : si absent, l'UI fallback sur
+    /// `recommendation`.
+    #[serde(default)]
+    pub mitigation: Option<String>,
+    /// Action immédiate recommandée à l'utilisateur (court terme, "que faire
+    /// dans les 5 prochaines minutes").  Différent de `mitigation` qui est
+    /// orienté process / patch à plus long terme.
+    #[serde(default)]
+    pub recommended_action: Option<String>,
 }
 
 /// Un pack complet de règles (ce qui est chargé en mémoire).

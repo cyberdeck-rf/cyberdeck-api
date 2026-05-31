@@ -38,6 +38,13 @@ payload constant indique soit un fixed-code (vulnérable au replay immédiat) \
 soit un dysfonctionnement crypto exploitable.
 """
 recommendation = "Auditer l'algorithme de rolling code du transmetteur. Remplacer par AES-CCM (e.g. Microchip XCS3 ou ATtiny-AES) avec compteur monotone."
+why_dangerous  = """
+Un attaquant à portée RF (~50 m avec une antenne directionnelle) peut \
+capturer un appui de télécommande et le rejouer indéfiniment — accès au \
+garage, à la voiture, au portail.  L'absence de rolling rend l'attaque \
+exploitable en < 5 secondes avec un Flipper Zero standard.
+"""
+recommended_action = "Ne plus utiliser cette télécommande pour des actifs critiques. Désactiver le récepteur ou couper l'alimentation tant qu'un remplacement n'est pas effectué."
 references     = [
   "Kamkar — RollJam, DEF CON 23 (2015)",
   "Ibrahim et al. — Jam-Listen-Replay on RKE, 2019",
@@ -129,8 +136,17 @@ factory-default `FF FF FF FF FF FF`. La carte est lisible et clonable par \
 n'importe quel attaquant en < 1 seconde.
 """
 recommendation = "Re-keying obligatoire immédiat avec des clés aléatoires 6 octets. Audit complet de la flotte de badges."
+why_dangerous  = """
+Une clé Mifare Classic factory `FF FF FF FF FF FF` rend le secteur lisible \
+ET inscriptible sans aucune connaissance préalable.  N'importe quel \
+attaquant avec un Proxmark ou Flipper peut cloner la carte en quelques \
+secondes (CVE multiples Crypto1 — l'algorithme est cassé depuis 2007).
+"""
+mitigation = "Migration progressive de toute la flotte vers Mifare DESFire EV3 (AES-128 mutual auth). Si DESFire impossible, re-keying massif avec génération CSPRNG des 6 octets de clé par secteur."
+recommended_action = "Désactiver immédiatement l'accès du badge concerné côté contrôleur. Re-émettre une carte avec clés aléatoires sous 24h."
 references     = [
   "NXP MF1ICS50 Datasheet — default keys (2003)",
+  "Nohl & Plötz — Crypto1 break, 24C3 (2007)",
 ]
 [rule.match]
 all = [
@@ -176,6 +192,14 @@ bits en modulation ASK sans aucune authentification. Clonable sur un Flipper \
 en 2 secondes à 10 cm de distance.
 """
 recommendation = "Migrer vers HID iCLASS Seos ou Mifare DESFire EV3 13.56 MHz avec auth mutuelle AES-128."
+why_dangerous  = """
+EM4102 / T5577 émet en continu son UID 40 bits dès qu'il est dans le champ \
+RF du lecteur — aucune challenge-response, aucun chiffrement.  Un attaquant \
+peut cloner un badge en s'approchant à 10 cm dans un ascenseur, un open \
+space ou une file d'attente, en quelques secondes, sans contact direct.
+"""
+mitigation = "Migration de la flotte vers 13.56 MHz iCLASS Seos / DESFire EV3 avec mutual auth AES-128. Si migration impossible à court terme, ajouter un PIN au lecteur."
+recommended_action = "Sensibiliser les porteurs à ne pas exposer leur badge en public. Évaluer la criticité du local protégé pour prioriser la migration."
 references     = [
   "Westhues — RFID Spoofing (2006)",
   "https://en.wikipedia.org/wiki/EM4100",
@@ -244,6 +268,14 @@ WPA / WPA2 / WPA3).  Tout traffic est en clair, MitM trivial pour un \
 attaquant en portée RF.
 """
 recommendation = "Activer WPA3-Personal ou WPA2-Enterprise (RADIUS). Désactiver WPS. Ne JAMAIS opérer un AP open en production."
+why_dangerous  = """
+Un point d'accès ouvert sert toutes les trames en clair : un attaquant en \
+portée peut sniffer tous les credentials HTTP non-TLS, hijacker les sessions \
+applicatives, ou monter un evil-twin pour piéger les clients.  Combiné avec \
+un captive-portal phishing, exfiltration de credentials en quelques minutes.
+"""
+mitigation = "Activer WPA3-SAE (préféré) ou WPA2-PSK avec passphrase ≥ 20 caractères CSPRNG. Désactiver WPS sur l'AP. Si un AP captive est nécessaire (hôtel, café), forcer HTTPS + HSTS côté portail."
+recommended_action = "Ne pas se connecter à ce SSID. Si c'est votre propre AP, le reconfigurer avec WPA3 immédiatement."
 references     = [
   "IEEE 802.11-2020 §12 Security",
   "OWASP IoT Top 10 — Insecure Network Services",
@@ -290,6 +322,14 @@ en MitM pendant le pairing.  Combiné avec KNOB (CVE-2019-9506), permet de \
 forcer 1 octet d'entropie sur la clé négociée.
 """
 recommendation = "Utiliser BLE Secure Connections (LE Pairing 4.2+) avec Numeric Comparison ou Passkey. Refuser Just Works côté firmware."
+why_dangerous  = """
+Just Works n'offre AUCUNE protection MITM : un attaquant à portée RF peut \
+se positionner en relais pendant la phase de pairing initiale et obtenir \
+lecture/écriture sur toutes les caractéristiques GATT.  Sur un médical \
+device ou une serrure intelligente, c'est l'équivalent d'une porte dérobée.
+"""
+mitigation = "Forcer Passkey Entry ou Numeric Comparison sur les devices critiques (LE Secure Connections — Bluetooth 4.2+). Rotation des bondings tous les trimestres. Désactiver l'advertising BLE quand le device n'est pas en usage."
+recommended_action = "Auditer la configuration BLE du device. S'il s'agit d'un asset managé, pousser une configuration désactivant Just Works."
 references     = [
   "Antonioli et al. — KNOB, USENIX (2019), CVE-2019-9506",
   "Bluetooth Core Spec v5.4 §5.2.2 Pairing",
